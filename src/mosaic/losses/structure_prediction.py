@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from ..common import LossTerm
+import equinox as eqx
 
 
 # Each structure prediction model (AF2, boltz, boltz2, etc.) implements this interface for loss functionals
@@ -74,6 +75,7 @@ class AbstractStructureOutput:
     def residue_idx(self) -> Int[Array, "N"]:
         """Residue index in each chain!"""
         raise NotImplementedError
+
 
 
 def interaction_prediction_score(

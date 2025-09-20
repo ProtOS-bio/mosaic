@@ -9,7 +9,6 @@ import jax.numpy as jnp
 import joltz
 import numpy as np
 import torch
-import yaml
 from boltz.data.const import ref_atoms
 from boltz.main import (
     BoltzDiffusionParams,
@@ -109,7 +108,6 @@ class StructureWriter:
         )
         # TODO: return path to output structure
         return (Path(self.out_dir) / self.record.id) / f"{self.record.id}_model_0.cif"
-
 
 class ListFlowStyle(list):
     """Used to copy Boltz's specific yaml style"""
@@ -306,6 +304,7 @@ sequences:
     )
 
 
+
 def load_features_and_structure_writer(
     input_yaml_str: str,
     cache=Path("~/.boltz/").expanduser(),
@@ -435,6 +434,7 @@ class Boltz1Output(AbstractStructureOutput):
 
     @cached_property
     def structure_outputs(self) -> joltz.StructureModuleOutputs:
+        print("JIT compiling boltz1 structure module...")
         return self.joltz.sample_structure(
             self.features,
             self.trunk_outputs,
@@ -444,6 +444,7 @@ class Boltz1Output(AbstractStructureOutput):
 
     @cached_property
     def confidence_outputs(self) -> PyTree:
+        print("JIT compiling boltz1 confidence module...")
         return self.joltz.predict_confidence(
             self.features,
             self.trunk_outputs,
@@ -492,6 +493,7 @@ class Boltz1Loss(LossTerm):
     loss: LossTerm | LinearCombination
     deterministic: bool = True
     recycling_steps: int = 0
+    sampling_steps: int = 25
     name: str = "boltz1"
 
     def __call__(self, sequence: Float[Array, "N 20"], key=None):
@@ -506,6 +508,7 @@ class Boltz1Loss(LossTerm):
             deterministic=self.deterministic,
             key=key,
             recycling_steps=self.recycling_steps,
+            num_sampling_steps=self.sampling_steps,
         )
 
         v, aux = self.loss(

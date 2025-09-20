@@ -1,33 +1,44 @@
 import marimo
 
-__generated_with = "0.14.16"
+__generated_with = "0.15.5"
 app = marimo.App(width="medium")
 
 with app.setup:
     import jax
+    import marimo as mo
 
     import matplotlib.pyplot as plt
-    import mosaic.losses.boltz2 as bl2
     from mosaic.optimizers import simplex_APGM
     from mosaic.common import TOKENS
-    from mosaic.af2.alphafold2 import AF2
     import numpy as np
 
-    import equinox as eqx
     from mosaic.notebook_utils import pdb_viewer
     import mosaic.losses.structure_prediction as sp
 
-    boltz2 = bl2.load_boltz2()
+    from mosaic.models.boltz2 import Boltz2
+    from mosaic.structure_prediction import TargetChain
 
 
 @app.cell
 def _():
-    import marimo as mo
-    return (mo,)
+    from mosaic.models.af2 import AlphaFold2
+    return (AlphaFold2,)
 
 
 @app.cell
-def _(mo):
+def _(AlphaFold2):
+    model_af = AlphaFold2()
+    return (model_af,)
+
+
+@app.cell
+def _():
+    model = Boltz2()
+    return (model,)
+
+
+@app.cell
+def _():
     mo.md(
         """
     ---
@@ -51,20 +62,44 @@ def _():
 
 
 @app.cell
-def _(target_sequence):
-    def make_yaml(binder_sequence: str):
-        return """
-    version: 1
-    sequences:
-      - protein:
-          id: [A]
-          sequence: {seq}
-          msa: empty
-      - protein:
-          id: [B]
-          sequence: {t}
-    """.format(seq=binder_sequence,t = target_sequence)
-    return (make_yaml,)
+def _(binder_length, model_af, target_sequence, template_st):
+    af_f, _ = model_af.binder_features(binder_length=binder_length, chains = [TargetChain(target_sequence, use_msa=False, template_chain=template_st.st[0][0])])
+    return (af_f,)
+
+
+@app.cell
+def _(af_pred):
+    af_pred.iptm
+    return
+
+
+@app.cell
+def _(PSSM_sharper, af_f, model_af):
+    af_pred = model_af.predict(features=af_f, PSSM = PSSM_sharper, writer = None, key = jax.random.key(12))
+    return (af_pred,)
+
+
+@app.cell
+def _(af_pred):
+    plt.imshow(af_pred.pae)
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _(af_pred):
+    pdb_viewer(af_pred.st)
+    return
+
+
+@app.cell
+def _(binder_length, model, target_sequence):
+    features, structure_writer = model.binder_features(binder_length=binder_length, chains = [TargetChain(target_sequence)])
+    return features, structure_writer
 
 
 @app.cell
@@ -74,34 +109,25 @@ def _():
 
 
 @app.cell
-def _(binder_length, make_yaml):
-    features, boltz_writer = bl2.load_features_and_structure_writer(
-        make_yaml("X" * binder_length),
-    )
-    return boltz_writer, features
-
-
-@app.cell
 def _(ProteinMPNN):
     mpnn = ProteinMPNN.from_pretrained()
     return (mpnn,)
 
 
 @app.cell
-def _(InverseFoldingSequenceRecovery, features, mpnn):
-    loss = bl2.Boltz2Loss(
-        joltz2=boltz2,
+def _(InverseFoldingSequenceRecovery, features, model, mpnn):
+    loss = model.build_loss(
+        loss=2 * sp.BinderTargetContact()
+        + sp.WithinBinderContact()
+        + 5.0 * InverseFoldingSequenceRecovery(mpnn, temp=jax.numpy.array(0.01)),
         features=features,
-        loss=2 * sp.BinderTargetContact() + sp.WithinBinderContact() + 5.0*InverseFoldingSequenceRecovery(mpnn, temp = jax.numpy.array(0.05)),
-        deterministic=True,
-        recycling_steps=0,
     )
     return (loss,)
 
 
 @app.cell
-def _(mo):
-    mo.md("""Adding the ProteinMPNN log likelihood term to the loss above tends to generate sequences that AF2-multimer also likes, but is slower because we have to run the Boltz-2 structure module. Try removing it for faster generation!""")
+def _():
+    mo.md("""Adding the ProteinMPNN term to the loss above tends to generate sequences that AF2-multimer also likes, but is slower because we have to run the Boltz-2 structure module. Try removing it for faster generation!""")
     return
 
 
@@ -116,21 +142,20 @@ def _(binder_length, loss):
                 shape=(binder_length, 20),
             )
         ),
-        stepsize=0.1 * np.sqrt(binder_length),
-        momentum=0.9,
+        stepsize=0.1,
+        momentum=0.0,
     )
-
     return (PSSM,)
 
 
 @app.cell
-def _(PSSM, binder_length, loss):
+def _(PSSM, loss):
 
     PSSM_sharper, _ = simplex_APGM(
         loss_function=loss,
         n_steps=50,
         x=PSSM,
-        stepsize = 0.5 * np.sqrt(binder_length),
+        stepsize = 0.5,
         scale = 1.5,
         momentum=0.0
     )
@@ -138,163 +163,100 @@ def _(PSSM, binder_length, loss):
 
 
 @app.cell
-def _():
-    j_model = eqx.filter_jit(lambda model, *args, **kwargs: model(*args, **kwargs))
-    return (j_model,)
-
-
-@app.cell
-def _(j_model):
+def _(model):
     def predict(sequence, features, writer):
-        o = j_model(
-            boltz2,
-            bl2.set_binder_sequence(sequence, features),
-            key=jax.random.key(5),
-            deterministic=True,
-            num_sampling_steps=25,
-        )
-        st = writer(o[1])
-        viewer = pdb_viewer(st)
-        # print("plddt", o["plddt"][: sequence.shape[0]].mean())
-        # print("ipae", o["complex_ipae"].item())
-        return o, st, viewer
+        return model.predict(PSSM = sequence, features = features, writer = writer, key = jax.random.key(0))
     return (predict,)
 
 
 @app.cell
-def _(PSSM_sharper, boltz_writer, features, predict):
-    soft_output, soft_pred_st, _viewer = predict(
-        PSSM_sharper, features, boltz_writer
+def _(PSSM, features, predict, structure_writer):
+    soft_pred = predict(
+        PSSM, features, structure_writer
     )
-    _viewer
-    return soft_output, soft_pred_st
+    pdb_viewer(soft_pred.st)
+    return (soft_pred,)
 
 
 @app.cell
-def _(soft_output):
+def _(soft_pred):
+    soft_pred.iptm
+    return
+
+
+@app.cell
+def _(soft_pred):
     _f = plt.figure()
-    plt.imshow(soft_output[2].pae[0])
+    plt.imshow(soft_pred.pae)
     plt.colorbar()
     _f
     return
 
 
 @app.cell
-def _(PSSM_sharper, binder_seq, make_yaml, predict):
-    hard_output, pred_st, _viewer = predict(
-        PSSM_sharper, *bl2.load_features_and_structure_writer(input_yaml_str=make_yaml(binder_seq))
+def _(PSSM_sharper, features, predict, structure_writer):
+    pred = predict(
+        PSSM_sharper, features, structure_writer
     )
-    _viewer
-    return hard_output, pred_st
+    pdb_viewer(pred.st)
+    return (pred,)
 
 
 @app.cell
-def _(mo, pred_st):
-    mo.download(data=pred_st.make_pdb_string(), filename="a.pdb", label = "Boltz-2 predicted complex")
+def _(pred):
+    mo.download(data=pred.st.make_pdb_string(), filename="a.pdb", label = "Boltz-2 predicted complex")
     return
 
 
 @app.cell
-def _(hard_output):
+def _(pred):
     _f = plt.figure()
-    plt.imshow(hard_output[2].pae[0])
+    plt.imshow(pred.pae)
     plt.colorbar()
     _f
     return
 
 
 @app.cell
-def _(hard_output, soft_output):
-    plt.plot(hard_output[2].plddt[0])
-    plt.plot(soft_output[2].plddt[0])
+def _(pred, soft_pred):
+    plt.plot(pred.plddt)
+    plt.plot(soft_pred.plddt)
     return
-
-
-@app.cell
-def _():
-    af = AF2(num_recycle=4)
-    return (af,)
 
 
 @app.cell
 def _(PSSM_sharper):
     binder_seq = "".join(TOKENS[i] for i in PSSM_sharper.argmax(-1))
     binder_seq
-    return (binder_seq,)
+    return
 
 
 @app.cell
-def _(mo):
+def _():
     mo.md("""Make a template structure of the target alone we can use with AF2 multimer""")
     return
 
 
 @app.cell
-def _(target_sequence):
-    template_features, template_writer = bl2.load_features_and_structure_writer(
-    """version: 1
-    sequences:
-      - protein:
-          id: [A]
-          sequence: {seq}
-    """.format(seq = target_sequence)
-    )
+def _(model, target_sequence):
+    template_features, template_writer = model.target_only_features(chains=[TargetChain(sequence=target_sequence)])
     return template_features, template_writer
 
 
 @app.cell
 def _(predict, target_sequence, template_features, template_writer):
-    _, template_st, template_viewer = predict(
+    template_st = predict(
         jax.nn.one_hot([TOKENS.index(c) for c in target_sequence], 20),
         template_features,
         template_writer,
     )
-    template_viewer
+    pdb_viewer(template_st.st)
     return (template_st,)
 
 
 @app.cell
-def _(af, binder_seq, target_sequence, template_st):
-    iptms = [
-        af.predict(
-            chains=[binder_seq, target_sequence],
-            key=jax.random.key(2),
-            template_chains={1: template_st[0][0]},
-            model_idx=idx,
-        )[0].iptm
-        for idx in range(5)
-    ]
-
-    plt.plot(iptms)
-    plt.xlabel("AF2 model idx")
-    plt.ylabel("IPTM")
-    return
-
-
-@app.cell
-def _(af, binder_seq, target_sequence, template_st):
-    af_o, af_st = af.predict(
-        chains=[binder_seq, target_sequence],
-        key=jax.random.key(2),
-        template_chains={1: template_st[0][0]},
-        model_idx=0,
-    )
-    return af_o, af_st
-
-
-@app.cell
-def _(af_st):
-    pdb_viewer(af_st)
-    return
-
-
-@app.cell
-def _(af_o):
-    _f = plt.figure()
-    plt.imshow(af_o.predicted_aligned_error)
-    plt.colorbar()
-    plt.title("AF2 PAE")
-    _f
+def _(template_st):
+    template_st
     return
 
 
@@ -322,7 +284,7 @@ def _():
 
 
 @app.cell
-def _(mo):
+def _():
     mo.md("""Let's do it live! We can inverse fold the predicted complex using MPNN and the jacobi iteration in a few lines of code.""")
     return
 
@@ -345,9 +307,9 @@ def _(LossTerm):
 
 
 @app.cell
-def _(FixedStructureInverseFoldingLL, mpnn, soft_pred_st):
+def _(FixedStructureInverseFoldingLL, mpnn, soft_pred):
     if_ll = FixedStructureInverseFoldingLL.from_structure(
-            soft_pred_st,
+            soft_pred.st,
             mpnn,
             stop_grad=True
         )
@@ -376,42 +338,17 @@ def _(GumbelPerturbation, binder_length, if_ll, jacobi):
         np.random.randint(low=0, high=20, size=(binder_length)),
         key=jax.random.key(np.random.randint(1000000)),
     )
-    return (seq_mpnn,)
-
-
-@app.cell
-def _(af, seq_mpnn, target_sequence, template_st):
-    [af.predict(
-            chains=["".join(TOKENS[i] for i in seq_mpnn), target_sequence],
-            key=jax.random.key(2),
-            template_chains={1: template_st[0][0]},
-            model_idx=idx,
-        )[0].iptm
-        for idx in range(5)
-    ]
     return
 
 
 @app.cell
-def _(af, seq_mpnn, target_sequence, template_st):
-    _, _af_st = af.predict(
-        chains=["".join(TOKENS[i] for i in seq_mpnn), target_sequence],
-        key=jax.random.key(2),
-        template_chains={1: template_st[0][0]},
-        model_idx=1,
-    )
-    pdb_viewer(_af_st)
-    return
-
-
-@app.cell
-def _(mo):
+def _():
     mo.md("""For fun let's design 10 complexes""")
     return
 
 
 @app.cell
-def _(binder_length, boltz_writer, features, loss, predict):
+def _(binder_length, features, loss, predict, structure_writer):
     def design():
         _, PSSM = simplex_APGM(
             loss_function=loss,
@@ -422,21 +359,19 @@ def _(binder_length, boltz_writer, features, loss, predict):
                     shape=(binder_length, 20),
                 )
             ),
-            stepsize=0.1 * np.sqrt(binder_length),
+            stepsize=0.1,
             momentum=0.9,
         )
-        _, soft_pred_st, _ = predict(
-            PSSM, features, boltz_writer
+        prediction = predict(
+            PSSM, features, structure_writer
         )
-        return soft_pred_st
-
-
+        return prediction.st
     return (design,)
 
 
 @app.cell
-def _(design, mo):
-    designs = [design() for _ in mo.status.progress_bar(range(1))]
+def _(design):
+    designs = [design() for _ in mo.status.progress_bar(range(10))]
     return (designs,)
 
 

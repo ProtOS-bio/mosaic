@@ -1,16 +1,35 @@
 import marimo
 
-__generated_with = "0.14.16"
+__generated_with = "0.15.5"
 app = marimo.App(width="full")
 
 with app.setup:
-    # Initialization code that runs before all other cells
-    import mosaic.losses.boltz
-    boltz1 = mosaic.losses.boltz.load_boltz()
+    import jax
+    # jax.config.update("jax_debug_nans", True)
+
+    import marimo as mo
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from mosaic.optimizers import (
+        simplex_APGM,
+        gradient_MCMC,
+    )
+    import mosaic.losses.structure_prediction as sp
+    from mosaic.models.boltz1 import Boltz1
+
+    from mosaic.common import TOKENS
+    from mosaic.losses.transformations import SoftClip
+    from mosaic.notebook_utils import pdb_viewer
+    from jaxtyping import Float, Array
+    from mosaic.common import LossTerm
+    from mosaic.structure_prediction import TargetChain
+    from mosaic.models.af2 import AlphaFold2
+    from mosaic.proteinmpnn.mpnn import ProteinMPNN
+
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _():
     mo.md(
         """
     ---
@@ -28,65 +47,8 @@ def _(mo):
 
 @app.cell
 def _():
-    from mosaic.proteinmpnn.mpnn import ProteinMPNN
-    import gemmi
-    return ProteinMPNN, gemmi
-
-
-@app.cell
-def _():
-    from mosaic.common import LossTerm
-    import jax.numpy as jnp
-    return (LossTerm,)
-
-
-@app.cell
-def _():
-    from mosaic.losses.transformations import ClippedLoss
-    return (ClippedLoss,)
-
-
-@app.cell
-def _():
-    from mosaic.common import TOKENS
-    return (TOKENS,)
-
-
-@app.cell
-def _():
-    import marimo as mo
-    from ipymolstar import PDBeMolstar
-    from pathlib import Path
-    from boltz.model.models.boltz1 import Boltz1
-    from boltz.main import BoltzDiffusionParams
-    from dataclasses import asdict
-    import joltz
-    import jax
-    import equinox as eqx
-    import numpy as np
-    import optax
-    import boltz
-    import matplotlib.pyplot as plt
-    from mosaic.optimizers import (
-        simplex_APGM,
-        gradient_MCMC,
-    )
-    import mosaic.losses.boltz as bl
-    import mosaic.losses.structure_prediction as sp
-
-    return Path, bl, eqx, gradient_MCMC, jax, mo, np, plt, simplex_APGM, sp
-
-
-@app.cell
-def _():
-    from mosaic.notebook_utils import pdb_viewer
-    return (pdb_viewer,)
-
-
-@app.cell
-def _():
-    from jaxtyping import Float, Array
-    return Array, Float
+    boltz1 = Boltz1()
+    return (boltz1,)
 
 
 @app.cell
@@ -96,27 +58,10 @@ def _():
 
 
 @app.cell
-def _(eqx):
-    j_model = eqx.filter_jit(lambda model, *args, **kwargs: model(*args, **kwargs))
-    return (j_model,)
-
-
-@app.cell
-def _(bl, gemmi, j_model, jax, pdb_viewer):
+def _(boltz1):
     def predict(sequence, features, writer):
-        o = j_model(
-            boltz1,
-            bl.set_binder_sequence(sequence, features),
-            key=jax.random.key(5),
-            sample_structure=True,
-            confidence_prediction=True,
-            deterministic=True,
-        )
-        out_path = writer(o["sample_atom_coords"])
-        viewer = pdb_viewer(gemmi.read_structure(str(out_path)))
-        print("plddt", o["plddt"][: sequence.shape[0]].mean())
-        print("ipae", o["complex_ipae"].item())
-        return o, viewer
+        pred = boltz1.predict(PSSM = sequence, features=features, writer=writer, key = jax.random.key(11))
+        return pred, pdb_viewer(pred.st)
     return (predict,)
 
 
@@ -127,34 +72,32 @@ def _(scaffold_sequence):
 
 
 @app.cell
-def _(binder_length, bl, target_sequence):
-    boltz_features, boltz_writer = bl.make_binder_features(
-        binder_length,
-        target_sequence,
+def _(binder_length, boltz1, target_sequence):
+    boltz_features, boltz_writer = boltz1.binder_features(
+        binder_length=binder_length,
+        chains=[TargetChain(sequence=target_sequence)],
     )
     return boltz_features, boltz_writer
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _():
     mo.md("""First let's define a simple loss function to optimize.""")
     return
 
 
 @app.cell
-def _(bl, boltz_features, sp):
-    loss = bl.Boltz1Loss(
-        joltz1=boltz1,
+def _(boltz1, boltz_features):
+    loss = boltz1.build_loss(
         loss=2 * sp.BinderTargetContact() + sp.WithinBinderContact(),
         features=boltz_features,
-        recycling_steps=0,
-        deterministic=False,
+        recycling_steps=1,
     )
     return (loss,)
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _():
     mo.md("""Now we run an optimizer -- in this case an accelerated proximal gradient method -- to get an initial soluton""")
     return
 
@@ -167,7 +110,7 @@ def _(PSSM, boltz_features, boltz_writer, predict):
 
 
 @app.cell
-def _(binder_length, jax, loss, np, simplex_APGM):
+def _(binder_length, loss):
     _, PSSM = simplex_APGM(
         loss_function=loss,
         x=jax.nn.softmax(
@@ -178,10 +121,9 @@ def _(binder_length, jax, loss, np, simplex_APGM):
             )
         ),
         n_steps=100,
-        stepsize=0.1 * np.sqrt(binder_length),
+        stepsize=0.1,
         momentum=0.9,
     )
-
     return (PSSM,)
 
 
@@ -195,32 +137,32 @@ def _(PSSM, boltz_features, boltz_writer, predict):
 
 
 @app.cell
-def _(PSSM, soft_output, visualize_output):
+def _(PSSM, soft_output):
     visualize_output(soft_output, PSSM)
     return
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _():
     mo.md("""This looks pretty good (usually), but it isn't a single sequence (check out the PSSM above)! We could inverse fold the structure but instead let's try to 'sharpen' the PSSM to get to an extreme point of the probability simplex.""")
     return
 
 
 @app.cell
-def _(PSSM, binder_length, loss, np, simplex_APGM):
+def _(PSSM, loss):
     # we can sharpen these logits using weight decay (which is equivalent to adding entropic regularization)
     pssm_sharper, _ = simplex_APGM(
         loss_function=loss,
         n_steps=25,
         x=PSSM,
-        stepsize = 0.2 * np.sqrt(binder_length),
+        stepsize = 0.2,
         scale = 1.1
     )
     pssm_sharper, _ = simplex_APGM(
         loss_function=loss,
         n_steps=25,
         x=pssm_sharper,
-        stepsize = 0.2 * np.sqrt(binder_length),
+        stepsize = 0.2,
         scale = 1.5
     )
     return (pssm_sharper,)
@@ -236,86 +178,30 @@ def _(boltz_features, boltz_writer, predict, pssm_sharper):
 
 
 @app.cell
-def _(pssm_sharper, sharp_outputs, visualize_output):
+def _(pssm_sharper, sharp_outputs):
     visualize_output(sharp_outputs, pssm_sharper)
     return
 
 
 @app.cell(hide_code=True)
-def _(mo):
-    mo.md(
-        """
-    Hopefully this still looks pretty good and is now a single sequence!
-
-    One final check: when we run Boltz properly (i.e with all side-chain atoms) does it still like this sequence?
-    """
-    )
+def _():
+    mo.md("""Hopefully this still looks pretty good and is now a single sequence!""")
     return
 
 
 @app.cell
-def _(Path, TOKENS, bl, target_sequence):
-    # Let's repredict our designed sequence with the correct sidechains, hopefully Boltz still likes it
-    def repredict(pssm, target_sequence=target_sequence):
-        binder_seq = "".join(TOKENS[i] for i in pssm.argmax(-1))
-        print(binder_seq)
-        out_dir = Path(f"/tmp/proteins/{binder_seq[:10]}_{target_sequence[:10]}")
-        out_dir.mkdir(exist_ok=True, parents=True)
-
-        return bl.load_features_and_structure_writer(
-            bl.get_input_yaml(
-                binder_sequence=binder_seq, targets_sequence=target_sequence
-            )
-        )
-    return (repredict,)
-
-
-@app.cell
-def _(mo, predict, pssm_sharper, repredict, target_sequence):
-    f_r, _w = repredict(pssm_sharper, target_sequence=target_sequence)
-
-    repredicted_output, repredicted_viewer = predict(
-        f_r["res_type"][0][:, 2:22], f_r, _w
-    )
-
-    with open(next(_w.out_dir.glob("*/*.cif")), "r") as _f:
-        download_structure = mo.download(_f.read(), filename="next.cif")
-
-    repredicted_viewer
-    return (download_structure,)
-
-
-@app.cell
-def _(download_structure):
-    download_structure
-    return
-
-
-@app.cell
-def _(
-    TOKENS,
-    af2,
-    jax,
-    mo,
-    pdb_viewer,
-    pssm_sharper,
-    target_sequence,
-    target_st,
-):
+def _(af2, af_features, pssm_sharper):
     mo.md("""Finally, let's repredict with AF2-multimer""")
-    _o_af_scaffold, _st_af_scaffold = af2.predict(
-        ["".join([TOKENS[i] for i in pssm_sharper.argmax(-1)]), target_sequence],
-        template_chains={1: target_st[0][0]},
-        key=jax.random.key(0),
-        model_idx=0,
-    )
-    print(_o_af_scaffold.iptm)
-    pdb_viewer(_st_af_scaffold)
+
+    _o_af_repredict = af2.predict(features=af_features, PSSM = pssm_sharper, key = jax.random.key(12))
+
+    print(_o_af_repredict.iptm)
+    pdb_viewer(_o_af_repredict.st)
     return
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _():
     mo.md(
         """
     Okay, that was fun but let's do a something a little more complicated: we'll use AlphaFold2 (instead of Boltz) to design a binder that adheres to a specified fold. [7S5B](https://www.rcsb.org/structure/7S5B) is a denovo triple-helix bundle originally designed to bind IL-7r; let's see if we can find a sequence _with the same fold_ that AF thinks will bind to our target instead.
@@ -339,7 +225,7 @@ def _():
     from mosaic.losses.protein_mpnn import (
         FixedStructureInverseFoldingLL,
     )
-    return AF2, AlphaFoldLoss, FixedStructureInverseFoldingLL
+    return (FixedStructureInverseFoldingLL,)
 
 
 @app.cell
@@ -349,34 +235,26 @@ def _():
 
 
 @app.cell
-def _(AF2):
-    af2 = AF2()
+def _():
+    af2 = AlphaFold2()
     return (af2,)
 
 
-@app.cell
-def _(mo):
-    mo.md("""Now let's define a loss term that wraps and clips another loss functional.""")
-    return
-
-
 @app.cell(hide_code=True)
-def _(mo):
+def _():
     mo.md("""Let's add a loss term that penalizes cysteines.""")
     return
 
 
-@app.cell
-def _(Array, Float, LossTerm, TOKENS):
-    class NoCysteine(LossTerm):
-        def __call__(self, seq: Float[Array, "N 20"], *, key):
-            p_cys = seq[:, TOKENS.index("C")].sum()
-            return p_cys, {"p_cys": p_cys}
-    return (NoCysteine,)
+@app.class_definition
+class NoCysteine(LossTerm):
+    def __call__(self, seq: Float[Array, "N 20"], *, key):
+        p_cys = seq[:, TOKENS.index("C")].sum()
+        return p_cys, {"p_cys": p_cys}
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _():
     mo.md(
         """
     Next, we'll predict the scaffold alone using AF2 (we could use the crystal structure instead but this works fine). We'll use the predicted structure in two loss terms:
@@ -389,23 +267,32 @@ def _(mo):
 
 
 @app.cell
-def _(af2, jax, pdb_viewer, scaffold_sequence):
-    o_af_scaffold, st_af_scaffold = af2.predict(
-        [scaffold_sequence],
-        template_chains={},
+def _(af2, scaffold_sequence):
+    _scaffold_features, _= af2.target_only_features(chains = [TargetChain(sequence=scaffold_sequence, use_msa = False)])
+
+
+    o_af_scaffold = af2.predict(
+        features = _scaffold_features,
+        recycling_steps = 3,
         key=jax.random.key(0),
-        model_idx=0,
+        writer = None
     )
 
-    pdb_viewer(st_af_scaffold)
-    return o_af_scaffold, st_af_scaffold
+    af_scaffold_logits = af2.model_output(
+         features = _scaffold_features,
+        recycling_steps = 1,
+        key=jax.random.key(0),
+    ).distogram_logits
+
+    pdb_viewer(o_af_scaffold.st)
+    return af_scaffold_logits, o_af_scaffold
 
 
 @app.cell
-def _(FixedStructureInverseFoldingLL, ProteinMPNN, st_af_scaffold):
+def _(FixedStructureInverseFoldingLL, o_af_scaffold):
     # Create inverse folding LL term
     scaffold_inverse_folding_LL = FixedStructureInverseFoldingLL.from_structure(
-        st_af_scaffold,
+        o_af_scaffold.st,
         ProteinMPNN.from_pretrained(),
     )
     return (scaffold_inverse_folding_LL,)
@@ -413,55 +300,49 @@ def _(FixedStructureInverseFoldingLL, ProteinMPNN, st_af_scaffold):
 
 @app.cell
 def _(af2, binder_length, target_sequence, target_st):
-    ### Generate input features for alphafold
-    # We use a template for the target chain!
-    af_features, initial_guess = af2.build_features(
-        chains=["G" * binder_length, target_sequence],
-        template_chains={1: target_st[0][0]},
+    # ### Generate input features for alphafold
+    # # We use a template for the target chain!
+    af_features, _ = af2.binder_features(
+        binder_length=binder_length,
+        chains=[
+            TargetChain(
+                target_sequence, use_msa=False, template_chain=target_st[0][0]
+            )
+        ],
     )
     return (af_features,)
 
 
 @app.cell
-def _(
-    AlphaFoldLoss,
-    ClippedLoss,
-    NoCysteine,
-    af2,
-    af_features,
-    jax,
-    o_af_scaffold,
-    scaffold_inverse_folding_LL,
-    sp,
-):
+def _(af2, af_features, af_scaffold_logits, scaffold_inverse_folding_LL):
     af_loss = (
-        AlphaFoldLoss(
-            name="af",
-            forward=af2.alphafold_apply,
-            stacked_params=jax.device_put(af2.stacked_model_params),
-            features=af_features,
-            losses=1.0 * sp.PLDDTLoss()
+        af2.build_loss(
+            loss=1.0 * sp.PLDDTLoss()
             + 1 * sp.BinderTargetContact()
-            + 0.1 * sp.TargetBinderPAE()
-            + 0.1 * sp.BinderTargetPAE()
-            + 0.5
-            * ClippedLoss(
+            + 0.05 * sp.TargetBinderPAE()
+            + 0.05 * sp.BinderTargetPAE()
+            + 0.025 * sp.IPTMLoss()
+            + 0.0 * sp.PLDDTLoss()
+            + 0.4 * sp.WithinBinderPAE()
+            + 1.0 * sp.WithinBinderContact()
+            + 2.5*SoftClip(
                 sp.DistogramCE(
-                    jax.nn.softmax(o_af_scaffold.distogram.logits),
+                    jax.nn.softmax(af_scaffold_logits),
                     name="scaffoldCE",
                 ),
-                2,
-                100,
+                2.5,
+                3
             ),
+            features=af_features,
         )
-        + ClippedLoss(scaffold_inverse_folding_LL, 2, 100)
+        + 1.0*SoftClip(scaffold_inverse_folding_LL, 2.5, 3.0)
         + NoCysteine()
     )
     return (af_loss,)
 
 
 @app.cell
-def _(af_loss, binder_length, jax, np, simplex_APGM):
+def _(af_loss, binder_length):
     _, pssm_af = simplex_APGM(
         loss_function=af_loss,
         x=jax.nn.softmax(
@@ -472,33 +353,29 @@ def _(af_loss, binder_length, jax, np, simplex_APGM):
             )
         ),
         n_steps=100,
-        stepsize=0.1 * np.sqrt(binder_length),
-        momentum=0.5,
+        stepsize=0.1,
+        momentum=0.0,
+        serial_evaluation=True,
     )
     return (pssm_af,)
 
 
 @app.cell
-def _(binder_length, loss, np, pssm_af, simplex_APGM):
+def _(af_loss, pssm_af):
     pssm_sharper_af, _ = simplex_APGM(
-        loss_function=loss,
+        loss_function=af_loss,
         n_steps=25,
         x=pssm_af,
-        stepsize = 0.2 * np.sqrt(binder_length),
-        scale = 1.1
+        stepsize = 0.2,
+        scale = 1.5,
+        serial_evaluation=True
     )
-    pssm_sharper_af, _ = simplex_APGM(
-        loss_function=loss,
-        n_steps=25,
-        x=pssm_sharper_af,
-        stepsize = 0.2 * np.sqrt(binder_length),
-        scale = 1.5
-    )
+
     return (pssm_sharper_af,)
 
 
 @app.cell
-def _(mo):
+def _():
     mo.md("""Let's test this out by predicting the complex structure with Boltz and AF2""")
     return
 
@@ -511,84 +388,68 @@ def _(boltz_features, boltz_writer, predict, pssm_sharper_af):
 
 
 @app.cell
-def _(boltz_output, pssm_sharper_af, visualize_output):
+def _(boltz_output, pssm_sharper_af):
     visualize_output(boltz_output, pssm_sharper_af)
     return
 
 
 @app.cell
-def _(TOKENS, af2, jax, pssm_sharper_af, target_sequence, target_st):
-    o_pred, st_pred = af2.predict(
-        [
-            "".join([TOKENS[i] for i in pssm_sharper_af.argmax(-1)]),
-            target_sequence,
-        ],
-        template_chains={1: target_st[0][0]},
-        key=jax.random.key(0),
-        model_idx=0,
-    )
-    return (o_pred,)
+def _(af2, af_features, pssm_sharper_af):
+    af_o = af2.predict(PSSM = pssm_sharper_af, features=af_features,key = jax.random.key(0))
+    pdb_viewer(af_o.st)
+    return (af_o,)
 
 
 @app.cell
-def _(o_pred, plt):
-    _f = plt.imshow(o_pred.predicted_aligned_error)
-    plt.title(f"AF2 PAE, iptm: {o_pred.iptm: 0.3f}")
-    plt.colorbar()
-    _f
+def _(af_o, pssm_sharper_af):
+    visualize_output(af_o, pssm_sharper_af)
     return
 
 
 @app.cell
-def _(mo):
+def _():
     mo.md("""For fun (and to show how easy it is to use different optimization algorithms) let's try polishing this design using gradient-assisted MCMC""")
     return
 
 
 @app.cell
-def _(af_loss, gradient_MCMC, jax, pssm_sharper_af):
+def _(af_loss, pssm_sharper_af):
     seq_mcmc = gradient_MCMC(
         af_loss,
         jax.device_put(pssm_sharper_af.argmax(-1)),
         temp=0.001,
-        proposal_temp=0.01,
+        proposal_temp=0.0001,
         steps=100,
+        fix_loss_key=False,
+        serial_evaluation=True
     )
     return (seq_mcmc,)
 
 
 @app.cell
-def _(boltz_features, boltz_writer, jax, predict, seq_mcmc):
+def _(boltz_features, boltz_writer, predict, seq_mcmc):
     predict(jax.nn.one_hot(seq_mcmc, 20), boltz_features, boltz_writer)
     return
 
 
 @app.cell
-def _(TOKENS, af2, jax, plt, seq_mcmc, target_sequence, target_st):
-    _o_pred, mcmc_st = af2.predict(
-        [
-            "".join([TOKENS[i] for i in seq_mcmc]),
-            target_sequence,
-        ],
-        template_chains={1: target_st[0][0]},
-        key=jax.random.key(3),
-        model_idx=0,
-    )
-    print(_o_pred.iptm)
-    plt.imshow(_o_pred.predicted_aligned_error)
-    return (mcmc_st,)
+def _(af2, af_features, seq_mcmc):
+    af_o_mcmc = af2.predict(PSSM = jax.nn.one_hot(seq_mcmc, 20), features=af_features,key = jax.random.key(4))
+    print(af_o_mcmc.iptm)
+    plt.imshow(af_o_mcmc.pae)
+    return (af_o_mcmc,)
 
 
 @app.cell
-def _(mcmc_st, pdb_viewer):
-    pdb_viewer(mcmc_st)
+def _(af_o_mcmc):
+    pdb_viewer(af_o_mcmc.st)
     return
 
 
 @app.cell
-def _(mcmc_st, mo):
+def _(af_o_mcmc):
     mo.download(
-        mcmc_st.make_pdb_string(),
+        af_o_mcmc.st.make_pdb_string(),
         filename="mcmc.pdb",
         label="AF2 predicted complex",
     )
@@ -596,14 +457,8 @@ def _(mcmc_st, mo):
 
 
 @app.cell
-def _(jax, plt, seq_mcmc):
+def _(seq_mcmc):
     plt.imshow(jax.nn.one_hot(seq_mcmc, 20))
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md("""As a final example we'll try minimizing the same loss function using projected gradient descent on the simplex -- which also seems to work just fine.""")
     return
 
 
@@ -614,65 +469,102 @@ def _(boltz_features, boltz_writer, predict, pssm_af):
 
 
 @app.cell
-def _(plt, pssm_af):
+def _(pssm_af):
     plt.imshow(pssm_af)
     return
 
 
 @app.cell
-def _(bl, gemmi, j_model, jax, pdb_viewer, target_sequence):
+def _(boltz1, target_sequence):
     # predict target - we'll use this as a template for alphafold
 
-    target_features, target_writer = bl.make_monomer_features(target_sequence)
 
 
-    o_target = j_model(
-        boltz1,
-        target_features,
-        key=jax.random.key(5),
-        sample_structure=True,
-        confidence_prediction=True,
-    )
 
-    out_path_target = target_writer(o_target["sample_atom_coords"])
-    target_st = gemmi.read_structure(str(out_path_target))
+
+    target_features, target_writer = boltz1.target_only_features(chains = [TargetChain(sequence = target_sequence)])
+
+    o_target = boltz1.predict(features = target_features, writer = target_writer, key = jax.random.key(0))
+
+
+
+    target_st = o_target.st
     viewer_target = pdb_viewer(target_st)
     viewer_target
     return (target_st,)
 
 
 @app.cell
-def _(TOKENS, seq_mcmc):
+def _(seq_mcmc):
     "".join([TOKENS[i] for i in seq_mcmc])
     return
 
 
 @app.cell
-def _(TOKENS, pssm_sharper_af):
+def _(pssm_sharper_af):
     "".join([TOKENS[i] for i in pssm_sharper_af.argmax(-1)])
     return
 
 
 @app.cell(hide_code=True)
-def _(mo, plt):
-    def visualize_output(outputs, pssm):
-        _f = plt.imshow(outputs["i_pae"][0])
-        plt.title(f"Boltz PAE")
-        plt.colorbar()
-        _f
+def _():
+    mo.md("""As a final example let's try optimizing the *sum* of these loss terms; so we're calling both AF2 and Boltz1 at every iteration. In `mosaic` this is trivial.""")
+    return
 
-        _g = plt.figure(dpi=125)
-        plt.plot(outputs["plddt"][0])
-        plt.title("pLDDT")
-        plt.vlines([pssm.shape[0]], 0, 1, color="red", linestyles="--")
 
-        _h = plt.figure(dpi=125)
-        plt.imshow(pssm)
-        plt.xlabel("Amino acid")
-        plt.ylabel("Sequence position")
+@app.cell
+def _(af_loss, binder_length, loss):
+    _, pssm_both = simplex_APGM(
+        loss_function=af_loss + loss,
+        x=jax.nn.softmax(
+            0.5
+            * jax.random.gumbel(
+                key=jax.random.key(np.random.randint(100000)),
+                shape=(binder_length, 20),
+            )
+        ),
+        n_steps=100,
+        stepsize=0.15,
+        momentum=0.0,
+        serial_evaluation=True
+    )
+    return (pssm_both,)
 
-        return mo.ui.tabs({"PAE": _f, "pLDDT": _g, "PSSM": _h})
-    return (visualize_output,)
+
+@app.cell
+def _(boltz_features, boltz_writer, predict, pssm_both):
+    predict(pssm_both, boltz_features, boltz_writer)
+    return
+
+
+@app.function(hide_code=True)
+def visualize_output(outputs, pssm):
+    _f = plt.imshow(outputs.pae)
+    plt.title(f"PAE")
+    plt.colorbar()
+    _f
+
+    _g = plt.figure(dpi=125)
+    plt.plot(outputs.plddt)
+    plt.title("pLDDT")
+    plt.vlines([pssm.shape[0]], 0, 1, color="red", linestyles="--")
+
+    _h = plt.figure(dpi=125)
+    plt.imshow(pssm)
+    plt.xlabel("Amino acid")
+    plt.ylabel("Sequence position")
+
+    return mo.ui.tabs({"PAE": _f, "pLDDT": _g, "PSSM": _h})
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _():
+    return
 
 
 if __name__ == "__main__":
