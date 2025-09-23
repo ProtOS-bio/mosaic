@@ -251,17 +251,18 @@ def _(design_features, protenix, structure_loss, te):
 @app.cell
 def _(binder_length, loss):
     # JIT compile value + gradient
-    x = jax.nn.softmax(
-        0.50
-        * jax.random.gumbel(
-            key=jax.random.key(np.random.randint(100000)),
-            shape=(binder_length, 20),
+    with jax.default_matmul_precision("bfloat16"):
+        x = jax.nn.softmax(
+            0.50
+            * jax.random.gumbel(
+                key=jax.random.key(np.random.randint(100000)),
+                shape=(binder_length, 20),
+            )
         )
-    )
 
-    (_, aux), _ = mosaic.optimizers._eval_loss_and_grad(
-        x=x, loss_function=loss, key=jax.random.key(0)
-    )
+        (_, aux), _ = mosaic.optimizers._eval_loss_and_grad(
+            x=x, loss_function=loss, key=jax.random.key(0)
+        )
     return
 
 
@@ -275,34 +276,36 @@ def _(binder_length, loss):
                     )
                 )
 
-    for _outer in range(20):
-        print(_outer)
-        PSSM,_ = simplex_APGM(
-                loss_function=loss,
-                x=PSSM,
-                n_steps=2,
-                stepsize=0.15,
-                momentum=0.9,
-                scale=1.0,
-                update_loss_state=True
-            )
+    with jax.default_matmul_precision("bfloat16"):
+        for _outer in range(20):
+            print(_outer)
+            PSSM,_ = simplex_APGM(
+                    loss_function=loss,
+                    x=PSSM,
+                    n_steps=2,
+                    stepsize=0.15,
+                    momentum=0.9,
+                    scale=1.0,
+                    update_loss_state=True
+                )
     return (PSSM,)
 
 
 @app.cell
 def _(PSSM, loss):
-    PSSM_sharper = PSSM
-    for _ in range(5*2):
-        _,PSSM_sharper = simplex_APGM(
-                loss_function=loss,
-                x=PSSM_sharper,
-                n_steps=2,
-                stepsize=0.1,
-                momentum=0.0,
-                scale = 1.5,
-                update_loss_state=True,
-                logspace=False
-            )
+    with jax.default_matmul_precision("bfloat16"):
+        PSSM_sharper = PSSM
+        for _ in range(5*2):
+            _,PSSM_sharper = simplex_APGM(
+                    loss_function=loss,
+                    x=PSSM_sharper,
+                    n_steps=2,
+                    stepsize=0.1,
+                    momentum=0.0,
+                    scale = 1.5,
+                    update_loss_state=True,
+                    logspace=False
+                )
     return (PSSM_sharper,)
 
 
