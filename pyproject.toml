@@ -23,9 +23,7 @@ dependencies = [
     "scipy==1.15.1",
     "ablang>=0.3.1",
     "jablang",
-    "torchvision==0.20.1",
     "equinox>=0.13.0",
-    "torch==2.5.1",
     "numpy==2.1",
     "protenix",
     "httpx>=0.28.1",
@@ -51,14 +49,7 @@ artifacts = [
     "src/mosaic/proteinmpnn/weights/*",
 ]
 
-[[tool.uv.index]]
-name = "pytorch-cu124"
-url = "https://download.pytorch.org/whl/cu124"
-explicit = true
-
 [tool.uv.sources]
-torch = { index = "pytorch-cu124" }
-torchvision = { index = "pytorch-cu124" }
 jablang = { path = "/content/jablang" }
 joltz = { path = "/content/joltz" }
 esmj = { path = "/content/esmj" }
