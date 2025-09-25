@@ -59,10 +59,10 @@ explicit = true
 [tool.uv.sources]
 torch = { index = "pytorch" }
 torchvision = { index = "pytorch" }
-jablang = { git = "https://github.com/escalante-bio/jablang" }
-joltz = { git = "https://github.com/nboyd/joltz" }
-esmj = { git = "https://github.com/escalante-bio/esmj" }
-protenix = { git = "https://github.com/escalante-bio/protenij" }
+jablang = { path = "/content/jablang" }
+joltz = { path = "/content/joltz" }
+esmj = { path = "/content/esmj" }
+protenix = { path = "/content/protenij" }
 
 [tool.uv]
 conflicts = [
