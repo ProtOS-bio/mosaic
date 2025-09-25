@@ -34,7 +34,7 @@ jax-cpu = [
   "jax[cpu]",
 ]
 jax-cuda = [
-  "jax[cuda]",
+  "jax[cuda12]",
 ]
 jax-tpu= [
   "jax[tpu]",
