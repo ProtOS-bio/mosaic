@@ -23,7 +23,9 @@ dependencies = [
     "scipy==1.15.1",
     "ablang>=0.3.1",
     "jablang",
+    "torchvision>=v0.22.0",
     "equinox>=0.13.0",
+    "torch>=2.7.1",
     "numpy==2.1",
     "protenix",
     "httpx>=0.28.1",
@@ -34,7 +36,7 @@ jax-cpu = [
   "jax[cpu]",
 ]
 jax-cuda = [
-  "jax[cuda12]",
+  "jax[cuda]",
 ]
 jax-tpu= [
   "jax[tpu]",
@@ -49,7 +51,14 @@ artifacts = [
     "src/mosaic/proteinmpnn/weights/*",
 ]
 
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.uv.sources]
+torch = { index = "pytorch" }
+torchvision = { index = "pytorch" }
 jablang = { path = "/content/jablang" }
 joltz = { path = "/content/joltz" }
 esmj = { path = "/content/esmj" }
@@ -65,4 +74,3 @@ conflicts = [
 ]
 package = true
 override-dependencies = ["scipy==1.15.1", "numpy==2.1"]
-
