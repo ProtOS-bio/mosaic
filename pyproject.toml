@@ -29,6 +29,9 @@ dependencies = [
     "numpy==2.1",
     "protenix",
     "httpx>=0.28.1",
+    "nbformat",
+    "jupytext",
+    "ipykernel",
 ]
 
 [dependency-groups]
