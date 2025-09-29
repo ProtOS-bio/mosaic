@@ -109,6 +109,7 @@ predicted_st = model_boltz2.predict(
     key=jax.random.PRNGKey(0),
 )
 pdb_viewer(predicted_st.st)
+predicted_st.st.write_pdb("/tmp/trajectory.pdb")
 # %%
 # TODO: mpnn sampling impl is probably broken. temp solution can be to run mpnn externally
 from mosaic.proteinmpnn.utils import mpnn_autoreg_from_structure_batched
@@ -130,7 +131,7 @@ for i, seq in enumerate(seqs):
 complexes = gemmi_structure_from_models("designs", [st.st[0] for st in mpnn_struct])
 pdb_viewer(complexes)
 # %%
-
+mpnn_fasta = 's3://protos-scratch/nadav/trajectory.fasta'
 
 # %%
 # argmax_seq = "".join([TOKENS[int(i)] for i in PSSM.argmax(axis=-1)])
