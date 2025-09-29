@@ -26,6 +26,7 @@ class TargetChain:
     sequence: str
     polymer_type: str = PolymerType.PROTEIN
     use_msa: bool = True
+    msa_a3m_path: str | None = None
     template_chain: gemmi.Chain | None = None
 
 

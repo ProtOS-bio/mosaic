@@ -43,6 +43,9 @@ sequences:"""
         if not chain.use_msa:
             raw += """
         msa: empty"""
+        elif chain.msa_a3m_path is not None:
+            raw += f"""        
+        msa: {chain.msa_a3m_path}"""
 
         return raw
 
