@@ -402,7 +402,7 @@ class AlphaFold2(eqx.Module, StructurePredictionModel):
     af2_forward: callable
     stacked_parameters: PyTree
 
-    def __init__(self, data_dir: str = "."):
+    def __init__(self, data_dir: str = "/content/mosaic"):
         (forward_function, stacked_params) = load_af2(data_dir=data_dir)
         self.af2_forward = forward_function
         self.stacked_parameters = stacked_params

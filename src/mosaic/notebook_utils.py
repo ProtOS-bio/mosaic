@@ -36,3 +36,29 @@ def gemmi_structure_from_models(name: str, models: list[gemmi.Model], chain_idx 
     st.add_entity_types()
     st.assign_subchains()
     return st
+
+def visualize_trajectory(trajectory):
+    import numpy as np
+    from matplotlib import pyplot as plt
+    import matplotlib.animation as animation
+    from IPython.display import HTML
+    from mosaic.common import TOKENS
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    cax = ax.imshow(trajectory[0]['PSSM'].T, aspect='auto', cmap='viridis', clim=(0, 0.5))
+    fig.colorbar(cax, label='Probability')
+    ax.set_yticks(ticks=np.arange(20), labels=[TOKENS[i] for i in range(20)])
+    ax.set_xlabel('Residue Position')
+    ax.set_ylabel('Amino Acid')
+    ax.set_title('Amino Acid Probability Distribution Across Binder Sequence')
+    def update(frame):
+        ax.clear()
+        cax = ax.imshow(trajectory[frame]['PSSM'].T, aspect='auto', cmap='viridis', clim=(0, 0.5))
+        ax.set_yticks(ticks=np.arange(20), labels=[TOKENS[i] for i in range(20)])
+        ax.set_xlabel('Residue Position')
+        ax.set_ylabel('Amino Acid')
+        ax.set_title(f'Step {frame+1}/{len(trajectory)}; loss: {trajectory[frame]["loss"]:.2f}; plddt: {trajectory[frame]['']['af2'][7]['plddt']:.1f}')
+        return cax,
+    ani = animation.FuncAnimation(fig, update, frames=len(trajectory), interval=200)
+    plt.close()
+    return HTML(ani.to_jshtml())
