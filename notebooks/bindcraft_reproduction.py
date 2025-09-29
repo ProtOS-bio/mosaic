@@ -36,7 +36,7 @@ template_features, template_writer = model_boltz2.target_only_features(chains=[T
 
 # %%
 template_st = model_boltz2.predict(
-    PSSM=c
+    PSSM=jax.nn.one_hot([TOKENS.index(c) for c in target_sequence], 20),
     features=template_features,
     writer=template_writer,
     key=jax.random.PRNGKey(0),
