@@ -1,4 +1,7 @@
+import numpy as np
+import gemmi
 from colabdesign.mpnn import mk_mpnn_model
+
 
 def mpnn_gen_sequence(trajectory_st, num_seqs, model_name="v_48_020", weights="soluble", backbone_noise=0, binder_chain='A', target_chain='B', trajectory_interface_residues=None, omit_AAs="C", temperature=0.1):
     # clear GPU memory
@@ -26,8 +29,55 @@ def mpnn_gen_sequence(trajectory_st, num_seqs, model_name="v_48_020", weights="s
 
     return mpnn_sequences
 
+
 # Assuming binder first
 def get_binder_seqs(mpnn_full_sequences, binder_length):
     binder_seqs = [mpnn_full_sequence[:binder_length] for mpnn_full_sequence in mpnn_full_sequences['seq']]
     scores = mpnn_full_sequences['score']
     return binder_seqs, scores
+
+
+def load_backbone_from_model(model: gemmi.Model,
+                             chain_id: str,
+                             backbone_atoms=('N', 'CA', 'C')):
+    """
+    Collect backbone coordinates from a gemmi.Model.
+
+    Args:
+        model (gemmi.Model): Parsed model.
+        chain_id (str): Chain ID to extract (e.g., 'A').
+        backbone_atoms (tuple[str]): Atom names to extract.
+
+    Returns:
+        np.ndarray: (N, 3) array of xyz coordinates in PDB order for the
+                    atoms found (missing atoms are simply skipped).
+    """
+    try:
+        chain = model[chain_id]
+    except Exception as e:
+        raise KeyError(f"Chain '{chain_id}' not found in model: {e}")
+
+    coords = []
+    for res in chain:
+        # optionally skip waters/ligands:
+        if res.name in ("HOH", "WAT"):
+            continue
+
+        for atom in res:
+            if atom.name in backbone_atoms:
+                p = atom.pos
+                coords.append([float(p.x), float(p.y), float(p.z)])
+
+    return np.asarray(coords, dtype=float)
+
+
+# Assuming A is binder and B is target
+def get_bb_coords_and_tmask(model):
+    binder_bb = load_backbone_from_model(model, 'A')
+    target_bb = load_backbone_from_model(model, 'B')
+    coords = np.concatenate((binder_bb, target_bb))
+    target_mask = np.concatenate(( 
+        np.zeros((binder_bb.shape[0],), dtype=bool), 
+        np.ones((target_bb.shape[0],), dtype=bool))
+    )
+    return np.resize(coords, (coords.shape[0], 1, 3)), target_mask

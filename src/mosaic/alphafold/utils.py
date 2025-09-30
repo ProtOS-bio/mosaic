@@ -2,11 +2,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
+import gemmi
 import jax, jax.numpy as jnp
 from mosaic.common import TOKENS
+from mosaic.proteinmpnn.utils import get_bb_coords_and_tmask
+from protodev.utils.protein.metrics import calculate_rmsds
+
 
 # BindCraft-like gates
-BC_THRESH = dict(plddt=0.80, iptm=0.50, ipae=0.35)
+BC_THRESH = dict(plddt=0.80, iptm=0.50, ipae=0.35, rmsd=5.0)
 
 
 def _mean_plddt(plddt) -> float:
@@ -54,6 +58,7 @@ def _passes(metrics: Dict, thr: Dict = BC_THRESH) -> bool:
         metrics["plddt"] >= thr["plddt"]
         and metrics["iptm"] >= thr["iptm"]
         and metrics["ipae"] <= thr["ipae"]
+        and metrics["rmsd"] <= thr["rmsd"]
     )
 
 
@@ -63,6 +68,7 @@ class AF2ScreenHit:
     plddt: float
     iptm: float
     ipae: float
+    rmsd: float
     pdb_str: Optional[str] = None
     extras: Optional[Dict] = None   # e.g., per-res pLDDT
 
@@ -72,6 +78,7 @@ def af2_screen_mpnn_seqs(
     af2,                                  # your initialized AF2 object (has .predict)
     features,                             # precomputed features PyTree (reused)
     binder_seqs: List[str],
+    trajectory_model: gemmi.Model,
     model_indices: Sequence[int] = (0,),  # e.g., (0,1,2,3,4) for ensemble
     recycling_steps: int = 1,
     rng_seed: int = 0,
@@ -87,8 +94,10 @@ def af2_screen_mpnn_seqs(
     passed: List[AF2ScreenHit] = []
     rejects: List[Dict] = []
 
+    trajectory_bb, tmask = get_bb_coords_and_tmask(trajectory_model)
+
     for i, seq in enumerate(binder_seqs):
-        plddt_list, iptm_list, ipae_list = [], [], []
+        plddt_list, iptm_list, ipae_list, rmsd_list = [], [], [], []
         pdb_keep = None
         plddt_per_res_keep = None
 
@@ -126,11 +135,15 @@ def af2_screen_mpnn_seqs(
             if j == 0:
                 p = np.asarray(plddt_arr)
                 plddt_per_res_keep = p/100.0 if p.max() > 1.5 else p
+            design_bb, _ = get_bb_coords_and_tmask(pred.st[0])
+            rmsd_list.append(calculate_rmsds(trajectory_bb, design_bb, tmask=tmask, atom_idx=0)['target_aligned_rmsd'])
+
 
         metrics = dict(
             plddt=float(np.mean(plddt_list)),
             iptm=float(np.mean(iptm_list)),
             ipae=float(np.mean(ipae_list)),
+            rmsd=float(np.mean(rmsd_list)),
         )
 
         if _passes(metrics):
@@ -140,6 +153,7 @@ def af2_screen_mpnn_seqs(
                     plddt=metrics["plddt"],
                     iptm=metrics["iptm"],
                     ipae=metrics["ipae"],
+                    rmsd=metrics["rmsd"],
                     pdb_str=pdb_keep,
                     extras=dict(plddt_per_res=plddt_per_res_keep) if plddt_per_res_keep is not None else None,
                 )

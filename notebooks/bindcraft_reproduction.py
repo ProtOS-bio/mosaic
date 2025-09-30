@@ -120,6 +120,7 @@ passed, rejected = af2_screen_mpnn_seqs(
     af2=model_af,
     features=af_binder_features,
     binder_seqs=mpnn_seqs,
+    trajectory_model=predicted_st.st[0],
     model_indices=(0,),
     recycling_steps=3,
     rng_seed=42,
@@ -127,6 +128,5 @@ passed, rejected = af2_screen_mpnn_seqs(
     return_rejects=True,
 )
 # %%
-passed
 # %%
-# %%
+
