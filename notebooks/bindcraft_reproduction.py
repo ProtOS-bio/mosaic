@@ -10,12 +10,14 @@ from mosaic.models.af2 import AlphaFold2
 from mosaic.proteinmpnn.mpnn import ProteinMPNN
 
 #%%
+from mosaic.optimizers import simplex_APGM
+from mosaic.common import TOKENS
 from mosaic.structure_prediction import TargetChain
 from mosaic.losses.protein_mpnn import InverseFoldingSequenceRecovery
 import mosaic.losses.structure_prediction as sp
-from mosaic.common import TOKENS
-from mosaic.optimizers import simplex_APGM
-from mosaic.notebook_utils import pdb_viewer
+from mosaic.proteinmpnn.utils import mpnn_gen_sequence, get_binder_seqs
+from mosaic.alphafold.utils import af2_screen_mpnn_seqs
+from mosaic.notebook_utils import pdb_viewer, visualize_trajectory, gemmi_structure_from_models
 
 # %%
 model_af = AlphaFold2()
@@ -85,19 +87,7 @@ _, PSSM, trajectory = simplex_APGM(
     stepsize=0.1,
     momentum=0.0,
 )
-
 # %%
-# _, PSSM_sharper, trajectory_sharper = simplex_APGM(
-#     loss_function=loss,
-#     n_steps=50,
-#     x=PSSM,
-#     trajectory_fn=lambda aux, x: {**aux, "PSSM": x},
-#     stepsize = 0.5,
-#     scale = 1.5,
-#     momentum=0.0
-# )
-# %%
-from mosaic.notebook_utils import visualize_trajectory
 visualize_trajectory(trajectory)
 # %%
 features, structure_writer = model_boltz2.binder_features(binder_length=binder_length, chains = [TargetChain(target_sequence, use_msa=True, msa_a3m_path=pdl1_msa)])
@@ -109,17 +99,12 @@ predicted_st = model_boltz2.predict(
     key=jax.random.PRNGKey(0),
 )
 pdb_viewer(predicted_st.st)
-predicted_st.st.write_pdb("/tmp/trajectory.pdb")
 # %%
-# TODO: mpnn sampling impl is probably broken. temp solution can be to run mpnn externally
-from mosaic.proteinmpnn.utils import mpnn_autoreg_from_structure_batched
-seqs = mpnn_autoreg_from_structure_batched(st=predicted_st.st, K=16)
-
+full_seqs = mpnn_gen_sequence(predicted_st.st, num_seqs=16)
+mpnn_seqs, mpnn_scores = get_binder_seqs(full_seqs, binder_length)
 # %%
-from mosaic.notebook_utils import gemmi_structure_from_models
-
 mpnn_struct = []
-for i, seq in enumerate(seqs):
+for i, seq in enumerate(mpnn_seqs):
     mpnn_struct.append(
         model_boltz2.predict(
             PSSM=jax.nn.one_hot([TOKENS.index(c) for c in seq], 20),
@@ -131,18 +116,10 @@ for i, seq in enumerate(seqs):
 complexes = gemmi_structure_from_models("designs", [st.st[0] for st in mpnn_struct])
 pdb_viewer(complexes)
 # %%
-mpnn_fasta = 's3://protos-scratch/nadav/trajectory.fasta'
-
-# %%
-# argmax_seq = "".join([TOKENS[int(i)] for i in PSSM.argmax(axis=-1)])
-# seqs = [argmax_seq]
-
-from mosaic.alphafold.utils import af2_screen_mpnn_seqs
-
 passed, rejected = af2_screen_mpnn_seqs(
     af2=model_af,
     features=af_binder_features,
-    binder_seqs=seqs,
+    binder_seqs=mpnn_seqs,
     model_indices=(0,),
     recycling_steps=3,
     rng_seed=42,
@@ -151,4 +128,5 @@ passed, rejected = af2_screen_mpnn_seqs(
 )
 # %%
 passed
+# %%
 # %%
