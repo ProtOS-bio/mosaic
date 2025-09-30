@@ -32,6 +32,7 @@ dependencies = [
     "nbformat",
     "jupytext",
     "ipykernel",
+    "colabdesign"
 ]
 
 [dependency-groups]
@@ -66,6 +67,7 @@ jablang = { path = "/content/jablang" }
 joltz = { path = "/content/joltz" }
 esmj = { path = "/content/esmj" }
 protenix = { path = "/content/protenij" }
+colabdesign = { path = "/content/colabdesign" }
 
 [tool.uv]
 conflicts = [
