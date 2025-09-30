@@ -26,10 +26,12 @@ mpnn = ProteinMPNN.from_pretrained()
 
 # %%
 # PDL1
+from protodev.structure_prediction.common import get_msa_path_for_sequence
+
 target_sequence = "FTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQRARLLKDQLSLGNAALQITDVKLQDAGVYRCMISYGGADYKRITVKVNAPYAAALEHHHHHH"
-pdl1_msa = '/tmp/c071654bde2fa734272a562e46732c2f966d07d7be66e0f7c83018ffc9e5cab3.a3m'
+target_msa = get_msa_path_for_sequence(target_sequence)
 # %%
-template_features, template_writer = model_boltz2.target_only_features(chains=[TargetChain(sequence=target_sequence, use_msa=True, msa_a3m_path=pdl1_msa)])
+template_features, template_writer = model_boltz2.target_only_features(chains=[TargetChain(sequence=target_sequence, use_msa=True, msa_a3m_path=target_msa)])
 # %%
 template_st = model_boltz2.predict(
     PSSM=jax.nn.one_hot([TOKENS.index(c) for c in target_sequence], 20),
@@ -90,7 +92,7 @@ _, PSSM, trajectory = simplex_APGM(
 # %%
 visualize_trajectory(trajectory)
 # %%
-features, structure_writer = model_boltz2.binder_features(binder_length=binder_length, chains = [TargetChain(target_sequence, use_msa=True, msa_a3m_path=pdl1_msa)])
+features, structure_writer = model_boltz2.binder_features(binder_length=binder_length, chains = [TargetChain(target_sequence, use_msa=True, msa_a3m_path=target_msa)])
 
 predicted_st = model_boltz2.predict(
     PSSM=PSSM,
@@ -102,19 +104,7 @@ pdb_viewer(predicted_st.st)
 # %%
 full_seqs = mpnn_gen_sequence(predicted_st.st, num_seqs=16)
 mpnn_seqs, mpnn_scores = get_binder_seqs(full_seqs, binder_length)
-# %%
-mpnn_struct = []
-for i, seq in enumerate(mpnn_seqs):
-    mpnn_struct.append(
-        model_boltz2.predict(
-            PSSM=jax.nn.one_hot([TOKENS.index(c) for c in seq], 20),
-            features=features,
-            writer=structure_writer,
-            key=jax.random.PRNGKey(i+1234),
-        )
-    )
-complexes = gemmi_structure_from_models("designs", [st.st[0] for st in mpnn_struct])
-pdb_viewer(complexes)
+
 # %%
 passed, rejected = af2_screen_mpnn_seqs(
     af2=model_af,
@@ -124,9 +114,10 @@ passed, rejected = af2_screen_mpnn_seqs(
     model_indices=(0,),
     recycling_steps=3,
     rng_seed=42,
-    save_pdb=False,
     return_rejects=True,
 )
 # %%
-# %%
+complexes = gemmi_structure_from_models("designs", [p.st_model for p in passed])
+pdb_viewer(complexes)
 
+# %%

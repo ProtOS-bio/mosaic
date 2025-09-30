@@ -72,9 +72,10 @@ def load_backbone_from_model(model: gemmi.Model,
 
 
 # Assuming A is binder and B is target
-def get_bb_coords_and_tmask(model):
-    binder_bb = load_backbone_from_model(model, 'A')
-    target_bb = load_backbone_from_model(model, 'B')
+def get_bb_coords_and_tmask(model, binder_chain='A', target_chain='B'):
+    assert binder_chain < target_chain  # enforce order
+    binder_bb = load_backbone_from_model(model, binder_chain)
+    target_bb = load_backbone_from_model(model, target_chain)
     coords = np.concatenate((binder_bb, target_bb))
     target_mask = np.concatenate(( 
         np.zeros((binder_bb.shape[0],), dtype=bool), 

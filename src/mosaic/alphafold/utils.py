@@ -69,7 +69,7 @@ class AF2ScreenHit:
     iptm: float
     ipae: float
     rmsd: float
-    pdb_str: Optional[str] = None
+    st_model: Optional[gemmi.Model] = None
     extras: Optional[Dict] = None   # e.g., per-res pLDDT
 
 
@@ -82,7 +82,6 @@ def af2_screen_mpnn_seqs(
     model_indices: Sequence[int] = (0,),  # e.g., (0,1,2,3,4) for ensemble
     recycling_steps: int = 1,
     rng_seed: int = 0,
-    save_pdb: bool = False,
     return_rejects: bool = False,
 ):
     """
@@ -94,11 +93,11 @@ def af2_screen_mpnn_seqs(
     passed: List[AF2ScreenHit] = []
     rejects: List[Dict] = []
 
-    trajectory_bb, tmask = get_bb_coords_and_tmask(trajectory_model)
+    trajectory_bb, rmsd_tmask = get_bb_coords_and_tmask(trajectory_model)
 
     for i, seq in enumerate(binder_seqs):
         plddt_list, iptm_list, ipae_list, rmsd_list = [], [], [], []
-        pdb_keep = None
+        st_keep = None
         plddt_per_res_keep = None
 
         for j, midx in enumerate(model_indices):
@@ -130,13 +129,12 @@ def af2_screen_mpnn_seqs(
             plddt_list.append(_mean_plddt(plddt_arr))
             iptm_list.append(iptm); ipae_list.append(ipae)
 
-            if j == 0 and save_pdb:
-                pdb_keep = getattr(pred, "pdb_str", getattr(pred, "pdb", None))
             if j == 0:
+                st_keep = pred.st[0]
                 p = np.asarray(plddt_arr)
                 plddt_per_res_keep = p/100.0 if p.max() > 1.5 else p
-            design_bb, _ = get_bb_coords_and_tmask(pred.st[0])
-            rmsd_list.append(calculate_rmsds(trajectory_bb, design_bb, tmask=tmask, atom_idx=0)['target_aligned_rmsd'])
+            design_bb, _ = get_bb_coords_and_tmask(pred.st[0], binder_chain='B', target_chain='C')
+            rmsd_list.append(calculate_rmsds(trajectory_bb, design_bb, tmask=rmsd_tmask, atom_idx=0)['target_aligned_rmsd'])
 
 
         metrics = dict(
@@ -154,7 +152,7 @@ def af2_screen_mpnn_seqs(
                     iptm=metrics["iptm"],
                     ipae=metrics["ipae"],
                     rmsd=metrics["rmsd"],
-                    pdb_str=pdb_keep,
+                    st_model=st_keep,
                     extras=dict(plddt_per_res=plddt_per_res_keep) if plddt_per_res_keep is not None else None,
                 )
             )
