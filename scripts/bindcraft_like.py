@@ -5,6 +5,7 @@ import pickle
 from dataclasses import dataclass, field, asdict, is_dataclass, fields
 import jax
 import numpy as np
+import pandas as pd
 from mosaic.models.boltz2 import Boltz2
 from mosaic.models.af2 import AlphaFold2
 from mosaic.proteinmpnn.mpnn import ProteinMPNN
@@ -209,17 +210,18 @@ def run_single_trajectory(config: BindCraftLikeConfig, model_af: AlphaFold2, mod
         return_rejects=True,
     )
 
-    
-    with open(os.path.join(traj_dir, "screening_rejected.pkl"), "wb") as f:
-        pickle.dump(rejected, f)
+    passed_df = pd.DataFrame([{'seq': p.seq, 'plddt': p.plddt, 'ipae': p.ipae, 'iptm': p.iptm, 'rmsd': p.rmsd} for p in passed])
+    passed_df['passed'] = True
+    rejected_df = pd.DataFrame(rejected)
+    rejected_df['passed'] = False
+    all_results_df = pd.concat([passed_df, rejected_df], ignore_index=True)
+    all_results_df.to_csv(os.path.join(traj_dir, "screening_results.csv"), index=False)
 
     if len(passed) > 0:
         print(f"Trajectory {trajectory_index} succeeded with {len(passed)} designs passing AF2 screening.")
-        with open(os.path.join(traj_dir, "screening_passed.pkl"), "wb") as f:
-            pickle.dump([{'seq': p.seq, 'plddt': p.plddt, 'ipae': p.ipae, 'iptm': p.iptm, 'rmsd': p.rmsd} for p in passed], f)
+        
     else:
         raise RuntimeError("No designs passed AF2 screening.")
-
 
 if __name__ == "__main__":
         fire.Fire(main)
