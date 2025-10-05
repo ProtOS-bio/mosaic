@@ -397,7 +397,7 @@ class WithinTargetPAE(LossTerm):
         pae_within = jnp.fill_diagonal(
             output.pae[binder_len:, binder_len:], 0, inplace=False
         ).mean()
-        return pae_within, {"bb_pae": pae_within}
+        return pae_within, {"tt_pae": pae_within}
 
 
 class BinderTargetPAE(LossTerm):
