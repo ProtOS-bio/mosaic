@@ -9,10 +9,6 @@ from mosaic.proteinmpnn.utils import get_bb_coords_and_tmask
 from protodev.utils.protein.metrics import calculate_rmsds
 
 
-# BindCraft-like gates
-BC_THRESH = dict(plddt=0.80, iptm=0.50, ipae=0.35, rmsd=5.0)
-
-
 def _mean_plddt(plddt) -> float:
     p = np.asarray(plddt)
     if p.size == 0: return 0.0
@@ -42,7 +38,7 @@ def _ipae_on_interface(
     return float(np.mean(pae_bt) / 31.0)
 
 
-def _passes(metrics: Dict, thr: Dict = BC_THRESH) -> bool:
+def _passes(metrics: Dict, thr: Dict) -> bool:
     return (
         metrics["plddt"] >= thr["plddt"]
         and metrics["iptm"] >= thr["iptm"]
@@ -69,6 +65,10 @@ def af2_screen_mpnn_seqs(
     binder_seqs: List[str],
     trajectory_model: gemmi.Model,
     model_indices: Sequence[int] = (0,),  # e.g., (0,1,2,3,4) for ensemble
+    plddt_thresh: float = 0.8,
+    iptm_thresh: float = 0.5,
+    ipae_thresh: float = 0.35,
+    rmsd_thresh: float = 5.0,
     recycling_steps: int = 1,
     rng_seed: int = 0,
     return_rejects: bool = False,
@@ -136,7 +136,7 @@ def af2_screen_mpnn_seqs(
             rmsd=float(np.mean(rmsd_list)),
         )
 
-        if _passes(metrics):
+        if _passes(metrics, dict(plddt=plddt_thresh, iptm=iptm_thresh, ipae=ipae_thresh, rmsd=rmsd_thresh)):
             passed.append(
                 AF2ScreenHit(
                     seq=seq,
