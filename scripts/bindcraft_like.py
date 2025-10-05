@@ -195,6 +195,10 @@ def run_single_trajectory(config: BindCraftLikeConfig, model_af: AlphaFold2, mod
     full_seqs = mpnn_gen_sequence(predicted_st.st, num_seqs=config.screening.num_mpnn_seqs)
     mpnn_seqs, _ = get_binder_seqs(full_seqs, binder_length)
 
+    # PSSM argmax sequence
+    amax_seq = "".join([TOKENS[int(jax.numpy.argmax(p))] for p in PSSM])
+    mpnn_seqs += [amax_seq]
+
     passed, rejected = af2_screen_mpnn_seqs(
         af2=model_af,
         features=af_binder_features,
@@ -215,6 +219,8 @@ def run_single_trajectory(config: BindCraftLikeConfig, model_af: AlphaFold2, mod
     rejected_df = pd.DataFrame(rejected)
     rejected_df['passed'] = False
     all_results_df = pd.concat([passed_df, rejected_df], ignore_index=True)
+    all_results_df['name'] = [f"trajectory_{trajectory_index}_mpnn_{i}" for i in range(len(all_results_df))]
+    all_results_df[all_results_df['seq'] == amax_seq]['name'] = f"trajectory_{trajectory_index}_PSSM_argmax"
     all_results_df.to_csv(os.path.join(traj_dir, "screening_results.csv"), index=False)
 
     if len(passed) > 0:
