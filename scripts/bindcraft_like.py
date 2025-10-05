@@ -220,7 +220,7 @@ def run_single_trajectory(config: BindCraftLikeConfig, model_af: AlphaFold2, mod
     rejected_df['passed'] = False
     all_results_df = pd.concat([passed_df, rejected_df], ignore_index=True)
     all_results_df['name'] = [f"trajectory_{trajectory_index}_mpnn_{i}" for i in range(len(all_results_df))]
-    all_results_df[all_results_df['seq'] == amax_seq]['name'] = f"trajectory_{trajectory_index}_PSSM_argmax"
+    all_results_df.loc[all_results_df["seq"] == amax_seq, 'name'] = f"trajectory_{trajectory_index}_PSSM_argmax"
     all_results_df.to_csv(os.path.join(traj_dir, "screening_results.csv"), index=False)
 
     if len(passed) > 0:
