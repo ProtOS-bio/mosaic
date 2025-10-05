@@ -32,7 +32,10 @@ dependencies = [
     "nbformat",
     "jupytext",
     "ipykernel",
-    "colabdesign"
+    "colabdesign",
+    "s3fs",
+    "smart_open",
+    "pyarrow",
 ]
 
 [dependency-groups]
