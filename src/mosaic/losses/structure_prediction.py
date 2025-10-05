@@ -360,6 +360,7 @@ class DistogramCE(LossTerm):
 
 
 class PLDDTLoss(LossTerm):
+    also_on_target: bool = False
     def __call__(
         self,
         sequence: Float[Array, "N 20"],
@@ -367,7 +368,8 @@ class PLDDTLoss(LossTerm):
         key,
     ):
         binder_len = sequence.shape[0]
-        plddt = output.plddt[:binder_len].mean()
+        plddt_arr = output.plddt if self.also_on_target else output.plddt[:binder_len]
+        plddt = plddt_arr.mean()
         return -plddt, {"plddt": plddt}
 
 
@@ -381,6 +383,19 @@ class WithinBinderPAE(LossTerm):
         binder_len = sequence.shape[0]
         pae_within = jnp.fill_diagonal(
             output.pae[:binder_len, :binder_len], 0, inplace=False
+        ).mean()
+        return pae_within, {"bb_pae": pae_within}
+
+class WithinTargetPAE(LossTerm):
+    def __call__(
+        self,
+        sequence: Float[Array, "N 20"],
+        output: AbstractStructureOutput,
+        key,
+    ):
+        binder_len = sequence.shape[0]
+        pae_within = jnp.fill_diagonal(
+            output.pae[binder_len:, binder_len:], 0, inplace=False
         ).mean()
         return pae_within, {"bb_pae": pae_within}
 

@@ -20,17 +20,6 @@ def _mean_plddt(plddt) -> float:
     return float(np.mean(p))
 
 
-def _split_masks(chain_index: np.ndarray, binder_len: int) -> Tuple[np.ndarray, np.ndarray]:
-    """binder mask, target mask. Fallback: binder comes first."""
-    chain_index = np.asarray(chain_index)
-    if chain_index.size >= 2:
-        ids = np.unique(chain_index)
-        return (chain_index == ids[0]), (chain_index == ids[1])
-    L = chain_index.shape[0] if chain_index.size else binder_len * 2
-    bmask = np.zeros(L, dtype=bool); bmask[:binder_len] = True
-    return bmask, ~bmask
-
-
 def _ipae_on_interface(
     pae: np.ndarray,
     coords: Optional[np.ndarray],
@@ -123,7 +112,10 @@ def af2_screen_mpnn_seqs(
             chain_idx = getattr(pred, "chain_index", getattr(pred, "atom_chain_index", np.array([])))
             coords    = getattr(pred, "backbone_coordinates", getattr(pred, "coords", None))
 
-            bmask, tmask = _split_masks(np.asarray(chain_idx), binder_len=len(seq))
+            L = pae.shape[0]
+            binder_len = len(seq)
+            bmask = np.zeros(L, dtype=bool); bmask[:binder_len] = True
+            tmask = ~bmask
             ipae = _ipae_on_interface(np.asarray(pae), coords, bmask, tmask)
 
             plddt_list.append(_mean_plddt(plddt_arr))

@@ -51,13 +51,16 @@ def visualize_trajectory(trajectory):
     ax.set_xlabel('Residue Position')
     ax.set_ylabel('Amino Acid')
     ax.set_title('Amino Acid Probability Distribution Across Binder Sequence')
+
+    plddt_idx = [k for k, d in enumerate(trajectory[0]['']['af2']) if 'plddt' in d][0]
+
     def update(frame):
         ax.clear()
         cax = ax.imshow(trajectory[frame]['PSSM'].T, aspect='auto', cmap='viridis', clim=(0, 0.5))
         ax.set_yticks(ticks=np.arange(20), labels=[TOKENS[i] for i in range(20)])
         ax.set_xlabel('Residue Position')
         ax.set_ylabel('Amino Acid')
-        ax.set_title(f'Step {frame+1}/{len(trajectory)}; loss: {trajectory[frame]["loss"]:.2f}; plddt: {trajectory[frame]['']['af2'][7]['plddt']:.1f}')
+        ax.set_title(f'Step {frame+1}/{len(trajectory)}; loss: {trajectory[frame]["loss"]:.2f}; plddt: {trajectory[frame]['']['af2'][plddt_idx]['plddt']:.1f}')
         return cax,
     ani = animation.FuncAnimation(fig, update, frames=len(trajectory), interval=200)
     plt.close()
